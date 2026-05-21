@@ -69,7 +69,12 @@ def _build_system_prompt(fields: list[str], known_metadata: dict[str, str]) -> s
         "1. 顶层是一个对象，key 必须是下列字段名之一，多余字段会被忽略；\n"
         "2. 所有字段的值都是字符串；\n"
         "3. 当本片段不包含某字段信息时，将其值设为空字符串，不要编造；\n"
-        "4. 不要输出任何 JSON 之外的解释文字。\n\n"
+        "4. 不要输出任何 JSON 之外的解释文字；\n"
+        "5. **所有字段的值都必须用简体中文撰写**，即便论文原文是英文也要翻译/转述成中文。\n"
+        "   例外：`title` 保留论文原标题不翻译；`authors` 保留作者英文姓名；"
+        "`year` 是 4 位数字；`url` / `doi` / `venue` 保留原样。\n"
+        "   方法名、模型名、数据集名等专有名词可以保留英文（例如 Transformer、ImageNet），"
+        "但围绕它们的解释要用中文。\n\n"
         "字段定义：\n"
         + "\n".join(field_lines)
         + known_lines
