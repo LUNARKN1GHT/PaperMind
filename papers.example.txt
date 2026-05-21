@@ -1,0 +1,18 @@
+# 每行一条输入，# 开头的行会被忽略。
+# 支持四种形式（可混用）：
+
+# 1. arXiv id（带不带版本号都行）
+2401.12345
+2104.03667v2
+
+# 2. arXiv URL
+https://arxiv.org/abs/2310.06825
+
+# 3. DOI（需要 .env 里设置 UNPAYWALL_EMAIL）
+10.1145/3442188.3445922
+
+# 4. 本地 PDF 路径（推荐用于付费墙 ACM/IEEE/Nature 论文）
+./papers/sigmod2023_xxx.pdf
+
+# 5. 论文标题（fallback 走 Semantic Scholar 搜索）
+Attention Is All You Need

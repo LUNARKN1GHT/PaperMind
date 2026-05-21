@@ -32,3 +32,8 @@ env/
 outputs/
 .cache/
 *.log
+
+# 个人批量输入清单（papers.example.txt 作为模版会被提交）
+papers.txt
+papers*.txt
+!papers.example.txt
