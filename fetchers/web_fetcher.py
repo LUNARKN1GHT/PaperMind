@@ -7,12 +7,12 @@
 from __future__ import annotations
 
 import re
-import tempfile
 from pathlib import Path
 
 import httpx
 
 from . import FetchResult
+from ._download import download_pdf, safe_cache_key
 from .pdf_parser import parse_pdf
 
 _ARXIV_PDF_URL = "https://arxiv.org/pdf/{id}.pdf"
@@ -30,27 +30,18 @@ def _strip_version(arxiv_id: str) -> str:
     return re.sub(r"v\d+$", "", arxiv_id)
 
 
-def _download_pdf(url: str, *, timeout: float = 60.0) -> Path:
-    with httpx.Client(follow_redirects=True, timeout=timeout) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        if not resp.content.startswith(b"%PDF"):
-            raise RuntimeError(f"下载的内容不是 PDF: {url}")
-        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-        tmp.write(resp.content)
-        tmp.close()
-        return Path(tmp.name)
-
-
-def fetch_arxiv(arxiv_id: str) -> FetchResult:
+def fetch_arxiv(arxiv_id: str, *, cache_dir: Path | None = None) -> FetchResult:
     """从 arXiv 拉 PDF + 元数据。"""
     bare = _strip_version(arxiv_id)
     pdf_url = _ARXIV_PDF_URL.format(id=bare)
-    pdf_path = _download_pdf(pdf_url)
+    pdf_path, cached = download_pdf(
+        pdf_url, cache_key=safe_cache_key(f"arxiv_{bare}"), cache_dir=cache_dir
+    )
     try:
         result = parse_pdf(pdf_path)
     finally:
-        pdf_path.unlink(missing_ok=True)
+        if not cached and cache_dir is None:
+            pdf_path.unlink(missing_ok=True)
 
     # arXiv Atom API 拿元数据（标题、作者、年份）
     try:
@@ -77,16 +68,33 @@ def fetch_arxiv(arxiv_id: str) -> FetchResult:
     result.metadata.setdefault("venue", "arXiv")
     result.metadata.setdefault("arxiv_id", bare)
     result.metadata.setdefault("url", f"https://arxiv.org/abs/{bare}")
-    result.source = "arxiv"
+    result.source = "arxiv_cache" if cached else "arxiv"
     return result
 
 
-def fetch_doi(doi: str, *, email: str | None = None) -> FetchResult:
+def fetch_doi(
+    doi: str,
+    *,
+    email: str | None = None,
+    cache_dir: Path | None = None,
+) -> FetchResult:
     """通过 Unpaywall 查询 DOI 的 open-access PDF。"""
     if not email:
         raise RuntimeError(
             "Unpaywall 要求提供 email。请在 .env 设置 UNPAYWALL_EMAIL。"
         )
+
+    cache_key = safe_cache_key(f"doi_{doi}")
+
+    # 若 PDF 已缓存，可以跳过 Unpaywall 查询
+    if cache_dir is not None:
+        cached_pdf = cache_dir / f"{cache_key}.pdf"
+        if cached_pdf.exists() and cached_pdf.stat().st_size > 0:
+            result = parse_pdf(cached_pdf)
+            result.metadata.setdefault("doi", doi)
+            result.metadata.setdefault("url", f"https://doi.org/{doi}")
+            result.source = "unpaywall_cache"
+            return result
 
     with httpx.Client(timeout=20.0, follow_redirects=True) as client:
         resp = client.get(_UNPAYWALL_URL.format(doi=doi, email=email))
@@ -101,11 +109,14 @@ def fetch_doi(doi: str, *, email: str | None = None) -> FetchResult:
             "请提供本地 PDF 或换一篇有 OA 版本的论文。"
         )
 
-    pdf_path = _download_pdf(pdf_url)
+    pdf_path, cached = download_pdf(
+        pdf_url, cache_key=cache_key, cache_dir=cache_dir
+    )
     try:
         result = parse_pdf(pdf_path)
     finally:
-        pdf_path.unlink(missing_ok=True)
+        if not cached and cache_dir is None:
+            pdf_path.unlink(missing_ok=True)
 
     if data.get("title"):
         result.metadata.setdefault("title", data["title"])

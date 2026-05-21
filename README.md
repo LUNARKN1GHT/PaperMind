@@ -39,6 +39,17 @@ python main.py --batch papers.txt --output ./notes/ # 指定输出目录
 | DOI             | `10.1145/3442188.3445922`         |
 | 论文标题        | `Attention Is All You Need`       |
 
+## PDF 缓存
+
+默认开启：下载的 arXiv / DOI PDF 会缓存到 `.cache/pdfs/`，相同输入重跑不再联网。
+若想关掉（例如磁盘紧张），在 `.env` 里设置：
+
+```env
+ENABLE_PDF_CACHE=false
+```
+
+`.cache/` 已在 `.gitignore` 内，不会进仓库。本地 PDF 输入不参与缓存。
+
 ## 项目结构
 
 详见 [CLAUDE.md](CLAUDE.md)。

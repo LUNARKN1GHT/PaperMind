@@ -8,12 +8,12 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import httpx
 
 from . import FetchResult
+from ._download import download_pdf, safe_cache_key
 from .pdf_parser import parse_pdf
 
 _SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -26,7 +26,12 @@ def _headers(api_key: str | None) -> dict[str, str]:
     return {"x-api-key": api_key} if api_key else {}
 
 
-def search_title(title: str, *, api_key: str | None = None) -> FetchResult:
+def search_title(
+    title: str,
+    *,
+    api_key: str | None = None,
+    cache_dir: Path | None = None,
+) -> FetchResult:
     params = {"query": title, "limit": 1, "fields": _FIELDS}
     with httpx.Client(timeout=20.0, headers=_headers(api_key)) as client:
         resp = client.get(_SEARCH_URL, params=params)
@@ -64,23 +69,27 @@ def search_title(title: str, *, api_key: str | None = None) -> FetchResult:
     source = "semantic_scholar_abstract"
 
     if pdf_url:
+        # 优先用 arXiv id / DOI 作为缓存 key，便于跨入口复用
+        key_seed = (
+            metadata.get("arxiv_id")
+            and f"arxiv_{metadata['arxiv_id']}"
+            or metadata.get("doi")
+            and f"doi_{metadata['doi']}"
+            or f"s2_{title}"
+        )
         try:
-            with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-                pdf_resp = client.get(pdf_url)
-                pdf_resp.raise_for_status()
-                if pdf_resp.content.startswith(b"%PDF"):
-                    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-                    tmp.write(pdf_resp.content)
-                    tmp.close()
-                    pdf_path = Path(tmp.name)
-                    try:
-                        full = parse_pdf(pdf_path)
-                        raw_text = full.raw_text or abstract
-                        source = "semantic_scholar_pdf"
-                    finally:
-                        pdf_path.unlink(missing_ok=True)
+            pdf_path, cached = download_pdf(
+                pdf_url, cache_key=safe_cache_key(key_seed), cache_dir=cache_dir
+            )
+            try:
+                full = parse_pdf(pdf_path)
+                raw_text = full.raw_text or abstract
+                source = "semantic_scholar_pdf_cache" if cached else "semantic_scholar_pdf"
+            finally:
+                if not cached and cache_dir is None:
+                    pdf_path.unlink(missing_ok=True)
         except Exception:
-            # 下载失败就退化到 abstract，不让搜索流程整体失败
+            # 下载/解析失败就退化到 abstract，不让搜索流程整体失败
             pass
 
     if not raw_text:

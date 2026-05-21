@@ -40,14 +40,21 @@ def _setup_logging() -> None:
 
 
 def _fetch(spec: InputSpec, cfg: Config) -> FetchResult:
+    cache_dir = cfg.pdf_cache_dir  # None 时即关闭缓存
     if spec.kind == "pdf":
         return parse_pdf(spec.identifier)
     if spec.kind == "arxiv":
-        return fetch_arxiv(spec.identifier)
+        return fetch_arxiv(spec.identifier, cache_dir=cache_dir)
     if spec.kind == "doi":
-        return fetch_doi(spec.identifier, email=cfg.unpaywall_email)
+        return fetch_doi(
+            spec.identifier, email=cfg.unpaywall_email, cache_dir=cache_dir
+        )
     if spec.kind == "title":
-        return search_title(spec.identifier, api_key=cfg.semantic_scholar_api_key)
+        return search_title(
+            spec.identifier,
+            api_key=cfg.semantic_scholar_api_key,
+            cache_dir=cache_dir,
+        )
     raise ValueError(f"未知的输入类型: {spec.kind}")
 
 

@@ -28,6 +28,16 @@ class Config:
 
     max_retries: int
     max_input_tokens: int
+    enable_pdf_cache: bool
+
+    @property
+    def pdf_cache_dir(self) -> Path | None:
+        """启用缓存时返回 PDF 缓存目录，否则 None。"""
+        if not self.enable_pdf_cache:
+            return None
+        d = self.cache_dir / "pdfs"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @classmethod
     def load(cls) -> "Config":
@@ -54,4 +64,6 @@ class Config:
             cache_dir=cache_dir,
             max_retries=int(os.getenv("MAX_RETRIES", "2")),
             max_input_tokens=int(os.getenv("MAX_INPUT_TOKENS", "12000")),
+            enable_pdf_cache=os.getenv("ENABLE_PDF_CACHE", "true").strip().lower()
+            in ("1", "true", "yes", "on"),
         )
