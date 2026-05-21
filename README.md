@@ -25,7 +25,8 @@ cp .env.example .env
 python main.py --input "2401.12345"                 # 单篇 arXiv
 python main.py --input "./paper.pdf"                # 本地 PDF
 python main.py --input "Attention Is All You Need"  # 标题搜索
-python main.py --batch papers.txt                   # 批量
+python main.py --batch papers.txt                   # 批量（默认 4 线程并发）
+python main.py --batch papers.txt --workers 8       # 自定义并发数
 python main.py --batch papers.txt --output ./notes/ # 指定输出目录
 ```
 

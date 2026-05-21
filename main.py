@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from config import Config
@@ -32,7 +34,7 @@ logger = logging.getLogger("papermind")
 def _setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
-        format="[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+        format="[%(asctime)s] %(levelname)s %(threadName)s: %(message)s",
         datefmt="%H:%M:%S",
     )
 
@@ -115,7 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--input", help="单篇论文：PDF 路径 / arXiv id / DOI / 标题")
     src.add_argument("--batch", type=Path, help="批量文件，每行一个输入")
     parser.add_argument("--output", type=Path, help="输出目录（覆盖 .env 中的 OUTPUT_DIR）")
+    parser.add_argument(
+        "--workers", type=int, default=4,
+        help="并发线程数（仅对 --batch 生效；过高会触发 API 限速，默认 4）",
+    )
     args = parser.parse_args(argv)
+    if args.workers < 1:
+        parser.error("--workers 必须 >= 1")
 
     cfg = Config.load()
     output_dir = (args.output or cfg.output_dir).expanduser().resolve()
@@ -124,19 +132,36 @@ def main(argv: list[str] | None = None) -> int:
     llm = LLMClient(cfg)
 
     inputs = [args.input] if args.input else _read_batch(args.batch)
-    logger.info("待处理 %d 篇，输出目录: %s", len(inputs), output_dir)
+    workers = 1 if args.input else max(1, min(args.workers, len(inputs)))
+    logger.info(
+        "待处理 %d 篇，并发 %d，输出目录: %s", len(inputs), workers, output_dir
+    )
 
     error_log = output_dir / "errors.log"
+    error_lock = threading.Lock()
     succeeded, failed = 0, 0
-    for raw in inputs:
+
+    def _work(idx: int, raw: str) -> tuple[str, bool, str]:
+        # 给每个线程一个可读的名字，结合 %(threadName)s 让日志能区分论文
+        threading.current_thread().name = f"paper-{idx:02d}"
         try:
             process_one(raw, cfg, llm, output_dir)
-            succeeded += 1
+            return raw, True, ""
         except Exception as e:
-            failed += 1
-            logger.error("处理失败 %r: %s", raw, e)
-            with error_log.open("a", encoding="utf-8") as f:
-                f.write(f"INPUT: {raw}\nERROR: {e}\n{traceback.format_exc()}\n---\n")
+            tb = traceback.format_exc()
+            with error_lock, error_log.open("a", encoding="utf-8") as f:
+                f.write(f"INPUT: {raw}\nERROR: {e}\n{tb}\n---\n")
+            return raw, False, str(e)
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="paper") as pool:
+        futures = [pool.submit(_work, i + 1, raw) for i, raw in enumerate(inputs)]
+        for fut in as_completed(futures):
+            raw, ok, err = fut.result()
+            if ok:
+                succeeded += 1
+            else:
+                failed += 1
+                logger.error("处理失败 %r: %s", raw, err)
 
     logger.info("完成。成功 %d 篇，失败 %d 篇。", succeeded, failed)
     if failed:
