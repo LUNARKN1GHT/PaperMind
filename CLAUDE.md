@@ -133,6 +133,50 @@ python main.py --batch papers.txt --output ./my_notes/2024/
 
 ---
 
+## 每日速读模式（`--digest`）
+
+除了「指定论文 → 出详细笔记」，PaperMind 还支持「按方向发现新论文 → 过滤相关性 → 压缩 abstract → 出每日清单」。这条流程**不下载 PDF**，只取 arXiv 的 title/author/abstract，快且省。
+
+### 用法
+
+```bash
+# 用默认分类（DIGEST_CATEGORIES）+ 近 1 天
+python main.py --digest
+
+# 自定义分类与时间窗
+python main.py --digest --categories "cs.LG,cs.AI,q-fin.ST" --days 3
+```
+
+输出：`outputs/digest_YYYY-MM-DD.md`（Markdown 清单）+ 同名 `.html` + `outputs/latest.html`（双击用浏览器看，断网可用）。条目含相关度星级、命中理由、中文要点，按相关度排序。
+
+### 研究画像
+
+相关性过滤依据 `digest_profile.md`（运行时动态读取，描述「我关注什么」）。该文件含个人信息，已 gitignore；仓库只提交模版 `digest_profile.example.md`。首次使用：复制 example 为 `digest_profile.md` 并改成自己的方向。缺失时自动回退到 example。
+
+相关配置（`.env`，均可选）：
+
+```env
+DIGEST_CATEGORIES=cs.LG,cs.AI,cs.CL,q-fin.ST,stat.ML
+DIGEST_DAYS=1
+```
+
+### 全自动（macOS launchd）
+
+```bash
+bash scripts/install_digest.sh    # 安装定时任务
+```
+
+每天 9/13/19 点各触发一次，脚本幂等（当天已生成则跳过），早上没网失败时中午/晚上联网自动补跑。卸载：
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.papermind.digest.plist
+rm ~/Library/LaunchAgents/com.papermind.digest.plist
+```
+
+`scripts/` 下：`run_digest.sh`（被定时调用的 wrapper）、`com.papermind.digest.plist.template`（不含本机路径的 launchd 模版，安装时生成真实 plist）、`install_digest.sh`（安装脚本）。
+
+---
+
 ## 模块说明
 
 ### `router.py` — Input Router
