@@ -130,7 +130,15 @@ def run_digest(
     if not entries:
         return write_digest([], output_dir, categories=categories, scanned=0)
 
-    profile = cfg.digest_profile_path.read_text(encoding="utf-8")
+    profile_path = cfg.digest_profile_path
+    if not profile_path.exists():
+        example = profile_path.with_suffix(".example.md")
+        logger.warning(
+            "未找到 %s，回退到模版 %s。复制为 digest_profile.md 并填入你的关注方向以获得准确过滤。",
+            profile_path.name, example.name,
+        )
+        profile_path = example
+    profile = profile_path.read_text(encoding="utf-8")
     papers = [
         {"index": str(i), "title": e.title, "abstract": e.abstract}
         for i, e in enumerate(entries)

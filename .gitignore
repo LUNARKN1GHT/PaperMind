@@ -37,3 +37,6 @@ outputs/
 papers.txt
 papers*.txt
 !papers.example.txt
+
+# 个人研究画像（digest_profile.example.md 作为模版会被提交）
+digest_profile.md
