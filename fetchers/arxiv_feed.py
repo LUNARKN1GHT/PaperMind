@@ -68,7 +68,7 @@ def fetch_recent(
     categories: list[str],
     *,
     days: int = 1,
-    max_results: int = 200,
+    max_results: int = 120,
     timeout: float = 30.0,
 ) -> list[FeedEntry]:
     """拉取指定分类下最近 `days` 天提交的论文（按提交时间倒序）。
