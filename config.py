@@ -24,6 +24,9 @@ class Config:
 
     output_dir: Path
     template_path: Path
+    digest_profile_path: Path
+    digest_categories: list[str]
+    digest_days: int
     cache_dir: Path
 
     max_retries: int
@@ -61,6 +64,15 @@ class Config:
             unpaywall_email=os.getenv("UNPAYWALL_EMAIL") or None,
             output_dir=output_dir,
             template_path=PROJECT_ROOT / "template.md",
+            digest_profile_path=PROJECT_ROOT / "digest_profile.md",
+            digest_categories=[
+                c.strip()
+                for c in os.getenv(
+                    "DIGEST_CATEGORIES", "cs.LG,cs.AI,cs.CL,q-fin.ST,stat.ML"
+                ).split(",")
+                if c.strip()
+            ],
+            digest_days=int(os.getenv("DIGEST_DAYS", "1")),
             cache_dir=cache_dir,
             max_retries=int(os.getenv("MAX_RETRIES", "2")),
             max_input_tokens=int(os.getenv("MAX_INPUT_TOKENS", "12000")),

@@ -18,7 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from config import Config
+from digest_writer import write_digest
 from fetchers import FetchResult
+from fetchers.arxiv_feed import fetch_recent
 from fetchers.pdf_parser import parse_pdf
 from fetchers.search_agent import search_title
 from fetchers.web_fetcher import fetch_arxiv, fetch_doi
@@ -112,6 +114,52 @@ def process_one(raw_input: str, cfg: Config, llm: LLMClient, output_dir: Path) -
     return out_path
 
 
+def run_digest(
+    cfg: Config,
+    llm: LLMClient,
+    output_dir: Path,
+    *,
+    categories: list[str],
+    days: int,
+) -> Path:
+    """每日发现式 digest：按分类拉新论文 → LLM 过滤 + 压缩 → 写清单。"""
+    logger.info("digest 模式：分类 %s，近 %d 天", categories, days)
+    entries = fetch_recent(categories, days=days)
+    logger.info("拉到 %d 篇候选论文", len(entries))
+
+    if not entries:
+        return write_digest([], output_dir, categories=categories, scanned=0)
+
+    profile_path = cfg.digest_profile_path
+    if not profile_path.exists():
+        example = profile_path.with_suffix(".example.md")
+        logger.warning(
+            "未找到 %s，回退到模版 %s。复制为 digest_profile.md 并填入你的关注方向以获得准确过滤。",
+            profile_path.name, example.name,
+        )
+        profile_path = example
+    profile = profile_path.read_text(encoding="utf-8")
+    papers = [
+        {"index": str(i), "title": e.title, "abstract": e.abstract}
+        for i, e in enumerate(entries)
+    ]
+    verdicts = llm.digest_papers(profile, papers)
+
+    kept: list[tuple] = []
+    for i, e in enumerate(entries):
+        v = verdicts.get(i)
+        if v and v.get("relevant"):
+            kept.append((e, v))
+    kept.sort(key=lambda iv: int(iv[1].get("score", 0)), reverse=True)
+    logger.info("命中相关 %d 篇", len(kept))
+
+    out_path = write_digest(
+        kept, output_dir, categories=categories, scanned=len(entries)
+    )
+    logger.info("写出 digest: %s", out_path)
+    return out_path
+
+
 def _read_batch(path: Path) -> list[str]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
@@ -123,7 +171,17 @@ def main(argv: list[str] | None = None) -> int:
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", help="单篇论文：PDF 路径 / arXiv id / DOI / 标题")
     src.add_argument("--batch", type=Path, help="批量文件，每行一个输入")
+    src.add_argument(
+        "--digest", action="store_true",
+        help="每日发现式速读：按分类拉 arXiv 新论文，过滤相关性并压缩 abstract",
+    )
     parser.add_argument("--output", type=Path, help="输出目录（覆盖 .env 中的 OUTPUT_DIR）")
+    parser.add_argument(
+        "--categories", help="digest 分类，逗号分隔（覆盖 DIGEST_CATEGORIES）",
+    )
+    parser.add_argument(
+        "--days", type=int, help="digest 时间窗天数（覆盖 DIGEST_DAYS）",
+    )
     parser.add_argument(
         "--workers", type=int, default=4,
         help="并发线程数（仅对 --batch 生效；过高会触发 API 限速，默认 4）",
@@ -137,6 +195,21 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     llm = LLMClient(cfg)
+
+    if args.digest:
+        categories = (
+            [c.strip() for c in args.categories.split(",") if c.strip()]
+            if args.categories
+            else cfg.digest_categories
+        )
+        days = args.days if args.days is not None else cfg.digest_days
+        try:
+            run_digest(cfg, llm, output_dir, categories=categories, days=days)
+            return 0
+        except Exception as e:  # noqa: BLE001
+            logger.error("digest 失败: %s", e)
+            logger.debug("%s", traceback.format_exc())
+            return 1
 
     inputs = [args.input] if args.input else _read_batch(args.batch)
     workers = 1 if args.input else max(1, min(args.workers, len(inputs)))

@@ -81,6 +81,47 @@ def _build_system_prompt(fields: list[str], known_metadata: dict[str, str]) -> s
     )
 
 
+def _safe_int(value: object, *, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_digest_system_prompt(profile: str) -> str:
+    return (
+        "你是一个论文筛选与速读助手。下面是用户的研究画像，描述他关注 / 不关注什么：\n\n"
+        f"{profile}\n\n"
+        "用户会给你一批论文（每篇含 index、title、abstract）。请你对每一篇：\n"
+        "1. 依据研究画像判断它是否与用户相关（relevant: true/false）；\n"
+        "2. 给一个相关度评分 score（1-5 的整数，5 最相关，低优先方向给 1-2）；\n"
+        "3. reason：一句话中文说明为什么相关 / 不相关；\n"
+        "4. summary：仅对 relevant=true 的论文，用 2-3 句简体中文概括这篇做了什么、"
+        "核心方法或结论是什么；对 relevant=false 的论文 summary 留空字符串。\n\n"
+        "严格要求：\n"
+        "- 只输出 JSON，顶层对象形如 {\"results\": [ {\"index\":0, \"relevant\":true, "
+        "\"score\":4, \"reason\":\"...\", \"summary\":\"...\"}, ... ]}；\n"
+        "- results 必须覆盖输入的每一篇，index 与输入一致；\n"
+        "- summary 用简体中文，但论文标题、方法名、模型名等专有名词可保留英文；\n"
+        "- 不要编造 abstract 里没有的内容；不要输出 JSON 之外的任何文字。"
+    )
+
+
+def _build_digest_user_prompt(batch: list[dict[str, str]]) -> str:
+    lines = []
+    for p in batch:
+        lines.append(
+            f"index: {p['index']}\n"
+            f"title: {p['title']}\n"
+            f"abstract: {p['abstract']}\n"
+        )
+    return (
+        "以下是待筛选的论文：\n\n"
+        + "\n---\n".join(lines)
+        + "\n\n请按 system 中描述的 JSON schema 返回 results。"
+    )
+
+
 def _build_user_prompt(stage_label: str, paper_chunk: str) -> str:
     return (
         f"以下是论文的【{stage_label}】部分：\n\n"
@@ -115,6 +156,59 @@ class LLMClient:
             raise ValueError(f"LLM 未返回 JSON object，得到: {type(data).__name__}")
         # 只保留字符串值，去掉嵌套结构
         return {k: ("" if v is None else str(v)) for k, v in data.items()}
+
+    def digest_papers(
+        self,
+        profile: str,
+        papers: list[dict[str, str]],
+        *,
+        batch_size: int = 15,
+    ) -> dict[int, dict[str, object]]:
+        """对一批论文做相关性过滤 + abstract 压缩。
+
+        papers: 每篇是 {"index": "0", "title": ..., "abstract": ...}（index 为字符串化的下标）。
+        返回 {index(int): {"relevant": bool, "score": int, "reason": str, "summary": str}}。
+        过长时分批调用，避免单次 prompt 过大。
+        """
+        results: dict[int, dict[str, object]] = {}
+        for start in range(0, len(papers), batch_size):
+            batch = papers[start : start + batch_size]
+            system = _build_digest_system_prompt(profile)
+            user = _build_digest_user_prompt(batch)
+            resp = self._call_json_raw(system, user)
+            if not isinstance(resp, dict):
+                continue
+            for item in resp.get("results", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    idx = int(item.get("index"))
+                except (TypeError, ValueError):
+                    continue
+                results[idx] = {
+                    "relevant": bool(item.get("relevant", False)),
+                    "score": _safe_int(item.get("score"), default=0),
+                    "reason": str(item.get("reason", "")).strip(),
+                    "summary": str(item.get("summary", "")).strip(),
+                }
+        return results
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=20),
+        reraise=True,
+    )
+    def _call_json_raw(self, system: str, user: str) -> dict:
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        return json.loads(resp.choices[0].message.content or "{}")
 
     def fill_template(
         self,
