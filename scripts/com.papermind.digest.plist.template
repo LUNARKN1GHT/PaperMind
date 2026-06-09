@@ -3,7 +3,8 @@
 <!--
   PaperMind 每日 digest 的 launchd 模版（不含本机绝对路径，可安全提交）。
   install_digest.sh 会把 __PROJECT_DIR__ 替换成真实路径，生成到 ~/Library/LaunchAgents/。
-  默认每天 09:00 运行；睡眠中错过会在唤醒后补跑。改时间就改下面 Hour/Minute。
+  每天 09:00 / 13:00 / 19:00 各触发一次；脚本幂等，当天已生成则跳过。
+  这样早上没网失败，中午/晚上联网会自动补跑。睡眠错过的触发醒来后也会补跑。
 -->
 <plist version="1.0">
 <dict>
@@ -17,12 +18,20 @@
     </array>
 
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>9</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <array>
+        <dict>
+            <key>Hour</key><integer>9</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>13</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key><integer>19</integer>
+            <key>Minute</key><integer>0</integer>
+        </dict>
+    </array>
 
     <key>StandardOutPath</key>
     <string>__PROJECT_DIR__/outputs/logs/launchd.out.log</string>
