@@ -123,12 +123,14 @@ def run_digest(
     days: int,
 ) -> Path:
     """每日发现式 digest：按分类拉新论文 → LLM 过滤 + 压缩 → 写清单。"""
-    logger.info("digest 模式：分类 %s，近 %d 天", categories, days)
+    # digest 产物单独放 outputs/digest/，与单篇笔记分开，避免混在一起
+    digest_dir = output_dir / "digest"
+    logger.info("digest 模式：分类 %s，近 %d 天 → %s", categories, days, digest_dir)
     entries = fetch_recent(categories, days=days)
     logger.info("拉到 %d 篇候选论文", len(entries))
 
     if not entries:
-        return write_digest([], output_dir, categories=categories, scanned=0)
+        return write_digest([], digest_dir, categories=categories, scanned=0)
 
     profile_path = cfg.digest_profile_path
     if not profile_path.exists():
@@ -154,7 +156,7 @@ def run_digest(
     logger.info("命中相关 %d 篇", len(kept))
 
     out_path = write_digest(
-        kept, output_dir, categories=categories, scanned=len(entries)
+        kept, digest_dir, categories=categories, scanned=len(entries)
     )
     logger.info("写出 digest: %s", out_path)
     return out_path

@@ -12,7 +12,7 @@ cd "$PROJECT_DIR"
 
 # 幂等：当天已生成就跳过。配合 launchd 一天多次触发，
 # 早上没网失败也不会留下文件，中午/晚上联网时自动补跑，成功后当天不再重复。
-TODAY_FILE="$PROJECT_DIR/outputs/digest_$(date '+%Y-%m-%d').md"
+TODAY_FILE="$PROJECT_DIR/outputs/digest/digest_$(date '+%Y-%m-%d').md"
 if [ -f "$TODAY_FILE" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') 今日已生成，跳过：$TODAY_FILE" >> "$LOG_DIR/digest.log"
     exit 0

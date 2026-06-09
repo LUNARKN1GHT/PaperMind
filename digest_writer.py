@@ -55,10 +55,11 @@ def write_digest(
 
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
-    # 同步生成 HTML：当天一份 + latest.html（双击即看最新，断网也能开）
-    html = _render_html(items, on_date, categories or [], scanned)
-    (output_dir / f"digest_{on_date.isoformat()}.html").write_text(html, encoding="utf-8")
-    (output_dir / "latest.html").write_text(html, encoding="utf-8")
+    # 只维护一个 index.html（每次覆盖=永远最新），避免 HTML 文件越堆越多。
+    # 往期以轻量 .md 存档，并在 index.html 里列成可点链接。
+    archive = sorted(output_dir.glob("digest_*.md"), reverse=True)
+    html = _render_html(items, on_date, categories or [], scanned, archive)
+    (output_dir / "index.html").write_text(html, encoding="utf-8")
 
     return out_path
 
@@ -78,6 +79,10 @@ h1 { font-size: 24px; margin-bottom: 4px; }
 .reason { color: #888; font-size: 13px; font-style: italic; margin: 6px 0 10px; }
 .summary { margin-top: 8px; }
 .empty { color: #888; }
+.archive { margin-top: 36px; border-top: 1px solid #8883; padding-top: 16px; }
+.archive h3 { font-size: 15px; color: #888; margin: 0 0 8px; }
+.archive a { color: #4a90e2; text-decoration: none; margin-right: 14px;
+  font-size: 14px; line-height: 2; }
 """
 
 
@@ -86,6 +91,7 @@ def _render_html(
     on_date: date,
     categories: list[str],
     scanned: int,
+    archive: list[Path] | None = None,
 ) -> str:
     cards = []
     if not items:
@@ -106,6 +112,16 @@ def _render_html(
                 + (f'<div class="reason">命中理由：{reason}</div>' if reason else "")
                 + f'<div class="summary">{summary}</div></div>'
             )
+    # 往期存档：列出除今天外的历史 .md，点击在浏览器查看
+    archive_html = ""
+    past = [p for p in (archive or []) if p.stem != f"digest_{on_date.isoformat()}"]
+    if past:
+        links = "".join(
+            f'<a href="{escape(p.name)}">{escape(p.stem.replace("digest_", ""))}</a>'
+            for p in past
+        )
+        archive_html = f'<div class="archive"><h3>往期</h3>{links}</div>'
+
     return (
         f'<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -114,5 +130,6 @@ def _render_html(
         f'<div class="meta">扫描分类：{escape(", ".join(categories))}　|　'
         f"扫描 {scanned} 篇，命中 {len(items)} 篇</div>"
         + "".join(cards)
+        + archive_html
         + "</body></html>"
     )

@@ -147,7 +147,7 @@ python main.py --digest
 python main.py --digest --categories "cs.LG,cs.AI,q-fin.ST" --days 3
 ```
 
-输出：`outputs/digest_YYYY-MM-DD.md`（Markdown 清单）+ 同名 `.html` + `outputs/latest.html`（双击用浏览器看，断网可用）。条目含相关度星级、命中理由、中文要点，按相关度排序。
+输出统一放 `outputs/digest/`（与单篇笔记分开）：每天一份 `digest_YYYY-MM-DD.md` 存档，外加**唯一**的 `outputs/digest/index.html`（每次覆盖=永远最新，双击用浏览器看，断网可用，底部列出往期链接）。条目含相关度星级、命中理由、中文要点，按相关度排序。
 
 ### 研究画像
 
